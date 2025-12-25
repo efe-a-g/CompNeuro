@@ -63,10 +63,10 @@ class BlindSignalSeparationNetwork:
         return self.w1f, self.w1s
 
 class Trainer:
-    def __init__(self, network, data_gen, epochs=100, ITER=100, Npoints=2000):
+    def __init__(self, network, data_gen, repeats=100, ITER=100, Npoints=2000):
         self.network = network
         self.data_gen = data_gen
-        self.epochs = epochs
+        self.repeats = repeats
         self.ITER = ITER
         self.Npoints = Npoints
     
@@ -89,30 +89,33 @@ class Trainer:
             for i in range(self.Npoints):
                 x = self.network.relax(x0[i])
                 self.network.update_w(x)
-        return cor1[-1], cor2[-1], cor3[-1]
+        return cor1, cor2, cor3
 
 # Main execution
 data_gen = DataGenerator(N=3, Npoints=2000)
 network = BlindSignalSeparationNetwork(N=3)
-trainer = Trainer(network, data_gen, epochs=30, ITER=25, Npoints=2000)
+trainer = Trainer(network, data_gen, repeats=30, ITER=50, Npoints=1000)
 
 c1 = []
 c2 = []
 c3 = []
 
-for e in range(trainer.epochs):
+for e in range(trainer.repeats):
     x0 = data_gen.generate_input()
     final_cor1, final_cor2, final_cor3 = trainer.train_epoch(x0)
     c1.append(final_cor1)
     c2.append(final_cor2)
     c3.append(final_cor3)
 
-print(np.mean(c1), np.mean(c2), np.mean(c3))
+c1 = np.mean(c1, axis=0)
+c2 = np.mean(c2, axis=0)
+c3 = np.mean(c3, axis=0)
 plt.plot(c1)
 plt.plot(c2)
 plt.plot(c3)
 plt.xlabel('Epochs')
-plt.ylabel('Final correlation')
+plt.ylabel('Mean Correlation')
 plt.legend(['correlation 1-2', 'correlation 2-3', 'correlation 1-3'])
+plt.title("Mean Correlation across Epochs (1000 points, 30 repeats)")
 plt.show()
 
