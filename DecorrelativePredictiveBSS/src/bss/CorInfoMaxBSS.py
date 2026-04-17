@@ -345,11 +345,14 @@ class OnlineCorInfomax(BSSBaseClass):
 
 
     #### Learning algorith is implemented with the fit function
-    def fit(self, X, n_epochs=1):
+    def fit(self, X, n_epochs=1, shuffle_samples = False):
         n_mixtures, n_samples = X.shape
         if self.plot_debug_during_training:
             plt.figure(figsize=(45, 30), dpi=80)
-        idx = np.arange(n_samples)
+        if shuffle_samples:
+            idx = np.random.permutation(n_samples)
+        else:
+            idx = np.arange(n_samples)
         if self.W is None:
             # Initialize W with small random values
             self.W = np.eye(self.n_sources, n_mixtures) + np.random.randn(self.n_sources, n_mixtures) * 0.01
