@@ -75,7 +75,7 @@ online_corinfomax_hyperparam_dict = {
                 "B_y" : 5*np.eye(NumberofSources),
                 ### Ground truth source vectors. This part is only for debugging.
                 "debug_iteration_point" : 10000,
-                "plot_debug_during_training" : True,
+                "plot_debug_during_training" : False,
 }
 
 online_nsm_hyperparam_dict = {
@@ -83,7 +83,7 @@ online_nsm_hyperparam_dict = {
                 "neural_dynamics_iterations" : 250,
                 ### Ground truth source vectors. This part is only for debugging.
                 "debug_iteration_point" : 10000,
-                "plot_debug_during_training" : True,
+                "plot_debug_during_training" : False,
 }
 
 ldmi_hyperparam_dict = hyperparam_dict = {
