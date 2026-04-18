@@ -35,6 +35,7 @@ class PredictiveDecorrBSS(BSSBaseClass):
                  Sgt = None,
                  debug_iteration_point = 1000,
                  plot_debug_during_training = False,
+                 save_C_y_per_debug = False
                  ):
         self.n_sources = n_sources
         self.lambda_lateral = lambda_lateral
@@ -78,6 +79,8 @@ class PredictiveDecorrBSS(BSSBaseClass):
         self.SV_list = [] # To track the singular values of the feedforward weight for debugging and analysis of the learning dynamics
         self.debug_iteration_point = debug_iteration_point
         self.plot_debug_during_training = plot_debug_during_training
+        self.save_C_y_per_debug = save_C_y_per_debug
+        self.C_y_list = []
     #### Debugging functions for simulations if the ground truth source and mixing matrices are provide
 
     #### Neural dynamics algorithms for different source domains, e.g., sparse, simplex, etc.
@@ -517,6 +520,8 @@ class PredictiveDecorrBSS(BSSBaseClass):
                     self.SV_list.append(np.linalg.svd(self.W, compute_uv=False))
                     if self.plot_debug_during_training:
                         self.plot_for_debug(self.SINR_history, self.component_SNR_history, self.debug_iteration_point, Y_[:, idx[i_sample - 25 : i_sample]].T)
+                    if self.save_C_y_per_debug:
+                        self.C_y_list.append(self.C_y)
                 # Randomly select a sample for online learning
                 x_current = np.ascontiguousarray(X[:, idx[i_sample]])
                 y = np.zeros(self.n_sources)
@@ -545,7 +550,7 @@ class PredictiveDecorrBSS(BSSBaseClass):
                 self.mu_y = self.lambda_lateral * self.mu_y + (1 - self.lambda_lateral) * y # Exponential moving average to track the mean of the extracted sources
                 y_bar = y - self.mu_y
                 self.C_y = self.lambda_lateral * self.C_y + (1 - self.lambda_lateral) * np.outer(y_bar, y_bar)
-   
+
     def predict(self, X):
         return self.W @ X
 
