@@ -7,8 +7,11 @@ import pandas as pd
 
 from bss.bss_utils import generate_uncorrelated_uniform_sources, addWGN, ProjectColstoSimplex
 from bss.PredictiveDecorrBSS import PredictiveDecorrBSS
+from bss.PredictiveDecorrBSSSimple import PredictiveDecorrBSSSimple
 from bss.LDMIBSS import LDMIBSS
 from python_utils.python_utils import Timer
+from bss.BSSbase import BSSBaseClass
+from other_methods.src.CorInfoMaxBSS import OnlineCorInfoMax
 
 print("Running script PredictiveBSS_Noisy_Simplex_10by5")
 if not os.path.exists("../Results"):

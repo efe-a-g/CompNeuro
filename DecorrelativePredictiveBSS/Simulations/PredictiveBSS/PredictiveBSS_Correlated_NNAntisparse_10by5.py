@@ -8,6 +8,7 @@ import pandas as pd
 from bss.bss_utils import generate_correlated_copula_sources, addWGN
 from bss.BSSbase import BSSBaseClass
 from bss.PredictiveDecorrBSS import PredictiveDecorrBSS
+from bss.PredictiveDecorrBSSSimple import PredictiveDecorrBSSSimple
 from bss.CorInfoMaxBSS import OnlineCorInfomax
 from bss.LDMIBSS import LDMIBSS
 from bss.ica_utils import fit_icainfomax
@@ -252,3 +253,40 @@ for rho in rho_list:
         ############### NSMBSS ###########################
         ##################################################
         # TODO: I will add NSMBSS model here
+
+        ##################################################
+        ####### PREDICTIVE BSS SIMPLE#####################
+        ##################################################
+        print("Running Predictive BSS Simple Model")
+        with Timer() as t:
+            model = PredictiveDecorrBSSSimple(**predictivebss_hyperparam_dict,
+                                        Sgt = S)
+            model.C_y = np.eye(NumberofSources) * 2
+            model.W = np.random.randn(NumberofSources, NumberofMixtures) / 15 + np.eye(NumberofSources, NumberofMixtures) * 0.01
+            model.fit(X)
+
+        # In[7]:
+
+        Y_ = model.predict(X)
+        Y_ = model.signed_and_permutation_corrected_sources(S, Y_) # Find sign and permutation ambiguity
+        coef_ = ((Y_ * S).sum(axis=1) / (Y_ * Y_).sum(axis=1)).reshape(-1, 1) # Find if the extracted signals need some amplification! The networks learned weight may need amplification due to lateral connections during the neural dynamics!
+        Y_ = coef_ * Y_
+
+        SINR_result = model.ComputeSINR(S, Y_)
+        SNR_result = model.ComputeSNR(S, Y_)
+        print("Signal-to-Interference-and-Noise-Ratio (SINR): {}".format(SINR_result))
+        print("Component Signal-to-Noise-Ratio (SNR) Values : {}\n".format(SNR_result))
+
+        result_dict_current = {
+            'Model': 'PredictiveDecorrBSSSimple',
+            'seed': seed,
+            'rho' : rho,
+            'SINR': SINR_result,
+            'SNR': [SNR_result],
+            'SNRinp': target_SNRinp,
+            'execution_time': t.interval
+        }
+        results_data.append(result_dict_current)
+        result_df_current = pd.DataFrame(result_dict_current)
+        RESULTS_DF = pd.DataFrame(results_data)
+        RESULTS_DF.to_pickle(os.path.join("../Results", pickle_name_for_results))

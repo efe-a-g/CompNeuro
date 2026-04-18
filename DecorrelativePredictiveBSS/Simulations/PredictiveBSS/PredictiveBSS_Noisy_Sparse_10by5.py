@@ -7,8 +7,11 @@ import pandas as pd
 
 from bss.bss_utils import generate_uncorrelated_uniform_sources, addWGN, ProjectRowstoL1NormBall
 from bss.PredictiveDecorrBSS import PredictiveDecorrBSS
+from bss.PredictiveDecorrBSSSimple import PredictiveDecorrBSSSimple
+from bss.CorInfoMaxBSS import OnlineCorInfomax
 from bss.LDMIBSS import LDMIBSS
 from python_utils.python_utils import Timer
+from bss.BSSbase import BSSBaseClass
 
 print("Running script PredictiveBSS_Noisy_Sparse_10by5")
 if not os.path.exists("../Results"):
@@ -48,6 +51,32 @@ predictivebss_hyperparam_dict = {
                 "plot_debug_during_training" : False,
 }
 
+online_corinfomax_hyperparam_dict = {
+                "n_sources" :  NumberofSources,
+                "presumed_domain" : "sparse",
+                ### Optimization parameters
+                "lambda_lateral" : 0.99,
+                "gamma_predictive" : 25,
+                ### Learning rates 
+                "lr_W" : 5 * 1e-2,
+                "neural_lr_start" : 0.1,
+                "neural_lr_stop" : 1e-6,
+                "stlambda_lr" : 0.5,
+                "neural_dynamics_iterations" : 250,
+                "neural_OUTPUT_COMP_TOL" : 1e-7,
+                ### Learning rate rules and decay parameters
+                "lr_W_rule" : "divide_by_log_index",
+                "lr_W_decay_divider" : 5000,
+                "neural_lr_rule" : "divide_by_loop_index",
+                "neural_lr_decay_divider" : 200,
+                ### Initial values for weights if provided, if not they will be initialized in the fit function 
+                "W" : None,
+                "B_y" : None,
+                ### Ground truth source vectors. This part is only for debugging.
+                "debug_iteration_point" : 10000,
+                "plot_debug_during_training" : True,
+}
+
 ldmi_hyperparam_dict = {
                 "n_sources" :  NumberofSources,
                 "presumed_domain" : "sparse",
@@ -84,6 +113,11 @@ for snr_ in input_snr_list:
             np.sum(np.mean(X_noNoise ** 2, axis=1))
             / np.sum(np.mean((X_noNoise - X)**2, axis=1))
         )
+
+        ##################################################
+        ############## PredDecor #########################
+        ##################################################
+        print("Running Predictive Decor Model")
         with Timer() as t:
             model = PredictiveDecorrBSS(**predictivebss_hyperparam_dict, Sgt = S)
             model.fit(X)
@@ -117,8 +151,35 @@ for snr_ in input_snr_list:
         ##################################################
         ############ CorInfoMax BSS ######################
         ##################################################
-        # TODO: I will add CorInfoMax simulation here
+        print("Running CorInfoMax Model")
+        with Timer() as t:
+            model = OnlineCorInfomax(**online_corinfomax_hyperparam_dict)
+            model.fit(X)
 
+        # In[7]:
+
+        Y_ = model.predict(X)
+        Y_ = model.signed_and_permutation_corrected_sources(S, Y_) # Find sign and permutation ambiguity
+        coef_ = ((Y_ * S).sum(axis=1) / (Y_ * Y_).sum(axis=1)).reshape(-1, 1) # Find if the extracted signals need some amplification! The networks learned weight may need amplification due to lateral connections during the neural dynamics!
+        Y_ = coef_ * Y_
+
+        SINR_result = BSSBaseClass().ComputeSINR(S, Y_)
+        SNR_result = BSSBaseClass().ComputeSNR(S, Y_)
+        print("Signal-to-Interference-and-Noise-Ratio (SINR): {}".format(SINR_result))
+        print("Component Signal-to-Noise-Ratio (SNR) Values : {}\n".format(SNR_result))
+
+        result_dict_current = {
+            'Model': 'CorInfoMaxBSS',
+            'seed': seed,
+            'SINR': SINR_result,
+            'SNR': [SNR_result],
+            'SNRinp': target_SNRinp,
+            'execution_time': t.interval
+        }
+        results_data.append(result_dict_current)
+        result_df_current = pd.DataFrame(result_dict_current)
+        RESULTS_DF = pd.DataFrame(results_data)
+        RESULTS_DF.to_pickle(os.path.join("../Results", pickle_name_for_results))
 
         ##################################################
         ############## LDMIBSS ###########################
@@ -151,3 +212,37 @@ for snr_ in input_snr_list:
         result_df_current = pd.DataFrame(result_dict_current)
         RESULTS_DF = pd.DataFrame(results_data)
         RESULTS_DF.to_pickle(os.path.join("../Results", pickle_name_for_results))
+       
+        ##################################################
+        ############## PredDecor Simple ##################
+        ##################################################
+        print("Running Predictive Decor Simple Model")
+        with Timer() as t:
+            model = PredictiveDecorrBSSSimple(**predictivebss_hyperparam_dict, Sgt = S)
+            model.fit(X)
+
+        # In[7]:
+
+        Y_ = model.predict(X)
+        Y_ = model.signed_and_permutation_corrected_sources(S, Y_) # Find sign and permutation ambiguity
+        coef_ = ((Y_ * S).sum(axis=1) / (Y_ * Y_).sum(axis=1)).reshape(-1, 1) # Find if the extracted signals need some amplification! The networks learned weight may need amplification due to lateral connections during the neural dynamics!
+        Y_ = coef_ * Y_
+
+        SINR_result = model.ComputeSINR(S, Y_)
+        SNR_result = model.ComputeSNR(S, Y_)
+        print("Signal-to-Interference-and-Noise-Ratio (SINR): {}".format(SINR_result))
+        print("Component Signal-to-Noise-Ratio (SNR) Values : {}\n".format(SNR_result))
+
+        result_dict_current = {
+            'Model': 'PredictiveDecorrBSSSimple',
+            'seed': seed,
+            'SINR': SINR_result,
+            'SNR': [SNR_result],
+            'SNRinp': target_SNRinp,
+            'execution_time': t.interval
+        }
+        results_data.append(result_dict_current)
+        result_df_current = pd.DataFrame(result_dict_current)
+        RESULTS_DF = pd.DataFrame(results_data)
+        RESULTS_DF.to_pickle(os.path.join("../Results", pickle_name_for_results))
+

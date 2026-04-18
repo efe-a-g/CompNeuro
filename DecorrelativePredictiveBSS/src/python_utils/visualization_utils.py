@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import stats
 import pandas as pd
 import matplotlib.pyplot as plt
 from IPython.display import Math, display
@@ -112,37 +113,41 @@ def visualize_flattened_images(I, imsize, title="", height=5, width=15, cmap='gr
     
 def create_summary_table(df):
     """
-    Automatically detects varied parameters (rho, SNRinp) and groups by Model + Parameters.
+    Detects parameters and groups by Model + Params.
+    Reports Mean ± 95% Confidence Interval.
     """
     # 1. Calculate Mean Component SNR
     df['mSNR'] = df['SNR'].apply(lambda x: np.mean(x[0]) if isinstance(x, list) else np.nan)
 
     # 2. Automatically determine grouping columns
-    # We always group by Model. We also add rho or SNRinp if they exist in the dataframe.
     potential_params = ['rho', 'SNRinp']
     group_cols = ['Model'] + [col for col in potential_params if col in df.columns]
 
-    # 3. Aggregate statistics
+    # 3. Aggregate statistics: we need 'count' and 'std' to calculate SEM/CI
     summary = df.groupby(group_cols).agg({
-        'SINR': ['mean', 'std'],
-        'mSNR': ['mean', 'std'],
-        'execution_time': ['mean', 'std']
+        'SINR': ['mean', 'std', 'count'],
+        'mSNR': ['mean', 'std', 'count'],
+        'execution_time': ['mean', 'std', 'count']
     })
+
+    def get_ci95(group_row, col_name):
+        mean = group_row[(col_name, 'mean')]
+        std = group_row[(col_name, 'std')]
+        n = group_row[(col_name, 'count')]
+        
+        if n <= 1: return f"{mean:.2f} ± 0.00"
+        
+        # Calculate SEM and 95% CI Margin
+        sem = std / np.sqrt(n)
+        ci95_margin = stats.t.ppf(0.975, n - 1) * sem
+        return f"{mean:.2f} ± {ci95_margin:.2f}"
 
     # 4. Format for Paper
     final = pd.DataFrame(index=summary.index)
-    
-    final['SINR (dB)'] = summary.apply(
-        lambda x: f"{x[('SINR', 'mean')]:.2f} ± {x[('SINR', 'std')]:.2f}", axis=1
-    )
-    final['mSNR (dB)'] = summary.apply(
-        lambda x: f"{x[('mSNR', 'mean')]:.2f} ± {x[('mSNR', 'std')]:.2f}", axis=1
-    )
-    final['Time (s)'] = summary.apply(
-        lambda x: f"{x[('execution_time', 'mean')]:.2f} ± {x[('execution_time', 'std')]:.2f}", axis=1
-    )
+    final['SINR (dB)'] = summary.apply(lambda x: get_ci95(x, 'SINR'), axis=1)
+    final['mSNR (dB)'] = summary.apply(lambda x: get_ci95(x, 'mSNR'), axis=1)
+    final['Time (s)'] = summary.apply(lambda x: get_ci95(x, 'execution_time'), axis=1)
 
-    # Sort by the parameters (rho or SNRinp) for consistent plotting
     sort_levels = [col for col in potential_params if col in df.columns]
     if sort_levels:
         final = final.sort_index(level=sort_levels)
@@ -161,7 +166,8 @@ def plot_snr_performance(summary_df, x_axis_param='rho', title=None):
     name_mapping = {
         'PredictiveDecorrBSS': 'PredictiveDecor (Ours)',
         'PredictiveBSS': 'PredictiveDecor (Ours)',
-        'CorInfoMax': 'CorInfoMax',
+        'PredictiveDecorrBSSSimple': 'PredictiveDecor Simple',
+        'CorInfoMaxBSS': 'CorInfoMax',
         'LDMIBSS': 'LD-InfoMax',
         'LD-InfoMax': 'LD-InfoMax',
         'ICA_InfoMax': 'ICA-InfoMax',
@@ -173,51 +179,49 @@ def plot_snr_performance(summary_df, x_axis_param='rho', title=None):
     plot_data = summary_df.reset_index()
     plot_data['Model'] = plot_data['Model'].map(name_mapping).fillna(plot_data['Model'])
     
-    # 2. Parse "Mean ± Std" from the mSNR column for numeric plotting
+    # Parse "Mean ± CI_Margin"
     plot_data['mSNR_mean'] = plot_data['mSNR (dB)'].apply(lambda x: float(x.split(' ± ')[0]))
-    plot_data['mSNR_std'] = plot_data['mSNR (dB)'].apply(lambda x: float(x.split(' ± ')[1]))
+    plot_data['mSNR_ci'] = plot_data['mSNR (dB)'].apply(lambda x: float(x.split(' ± ')[1]))
     
     plt.figure(figsize=(13, 8), dpi=100)
     
-    # Custom color palette for distinct model visualization
     colors = {
-        'PredictiveDecor (Ours)': '#d62728', # Red
-        'CorInfoMax': '#ff7f0e',              # Orange
-        'LD-InfoMax': '#7f7f7f',              # Gray
-        'ICA-InfoMax': '#1f77b4',             # Blue
-        'BSM': '#2ca02c',                     # Green
-        'NSM': '#9467bd'                      # Purple
+        'PredictiveDecor (Ours)': '#d62728',
+        'PredictiveDecor Simple': '#c49c94',
+        'CorInfoMax': '#ff7f0e',
+        'LD-InfoMax': '#7f7f7f',
+        'ICA-InfoMax': '#1f77b4',
+        'BSM': '#2ca02c',
+        'NSM': '#ff9896'
     }
 
-    # 3. Determine Legend Order: Ours first, then benchmarks by overall strength
     model_ranking = plot_data.groupby('Model')['mSNR_mean'].mean().sort_values(ascending=False)
     sorted_benchmarks = [m for m in model_ranking.index if m != 'PredictiveDecor (Ours)']
     final_order = ['PredictiveDecor (Ours)'] + sorted_benchmarks
 
-    # 4. Core Plotting Loop
     x_ticks = sorted(plot_data[x_axis_param].unique())
     
     for model in final_order:
-        if model not in plot_data['Model'].values:
-            continue
+        if model not in plot_data['Model'].values: continue
             
         model_df = plot_data[plot_data['Model'] == model].sort_values(x_axis_param)
         x_vals = model_df[x_axis_param]
         mean = model_df['mSNR_mean']
-        std = model_df['mSNR_std']
+        ci = model_df['mSNR_ci'] # This is now the 95% CI Margin
         
         is_ours = (model == 'PredictiveDecor (Ours)')
-        linestyle = '-' if is_ours else '--'
-        linewidth = 4.5 if is_ours else 2.5
-        zorder = 10 if is_ours else 5 
-        
         plt.plot(x_vals, mean, label=model, color=colors.get(model, '#333333'), 
-                 linestyle=linestyle, marker='o', linewidth=linewidth, 
-                 markersize=10, zorder=zorder)
+                 linestyle='-' if is_ours else '--', marker='o', 
+                 linewidth=4.5 if is_ours else 2.5, markersize=10, zorder=10 if is_ours else 5)
         
-        plt.fill_between(x_vals, mean - std, mean + std, 
-                         color=colors.get(model, '#333333'), alpha=0.12, zorder=zorder-1)
+        # Shaded area now represents the 95% CI
+        plt.fill_between(x_vals, mean - ci, mean + ci, 
+                         color=colors.get(model, '#333333'), alpha=0.15)
 
+    # Formatting
+    plt.ylabel('Mean Component SNR (mSNR) [dB] (95% CI)', fontsize=20)
+    # ... (Rest of your plotting logic remains the same)
+    
     # 5. Title Logic and Axis Formatting
     if title is not None:
         plt.title(title, fontsize=22, fontweight='bold', pad=30)
@@ -228,16 +232,14 @@ def plot_snr_performance(summary_df, x_axis_param='rho', title=None):
 
     # Axis Labels and Scaling
     if x_axis_param == 'rho':
-        plt.xlabel('Correlation Coefficient ($\\rho$)', fontsize=20)
+        plt.xlabel('Correlation Coefficient ($\\rho$)', fontsize=22)
     elif x_axis_param == 'SNRinp':
-        plt.xlabel('Input SNR (dB)', fontsize=20)
+        plt.xlabel('Input SNR (dB)', fontsize=22)
         plt.gca().invert_xaxis() # Move from High SNR to Low SNR (Increasing Noise)
     
-    plt.ylabel('Mean Component SNR (mSNR) [dB]', fontsize=20)
-    plt.xticks(ticks=x_ticks, labels=x_ticks, fontsize=16)
-    plt.yticks(fontsize=16)
+    plt.xticks(ticks=x_ticks, labels=x_ticks, fontsize=20)
+    plt.yticks(fontsize=20)
     plt.grid(True, linestyle=':', alpha=0.6)
     plt.legend(fontsize=14, loc='best', frameon=True, shadow=True)
-    
     plt.tight_layout()
     return plt
